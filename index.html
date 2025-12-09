@@ -131,6 +131,10 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
         
+        // --- Endereço da sua API Real ---
+        // VOCÊ DEVE MUDAR ISTO PARA O ENDEREÇO PÚBLICO DO SEU SERVIDOR NODE.JS (se estiver hospedado)
+        const API_BASE_URL = 'http://localhost:3000'; 
+        
         // --- Componente de Ícone Lucide ---
         const Icon = ({ name, size = 20, className = "" }) => {
             return <i data-lucide={name} className={className} style={{ width: size, height: size, minWidth: size, minHeight: size }}></i>;
@@ -701,7 +705,7 @@
             const [modalContent, setModalContent] = useState({ title: '', message: '' });
             const [selectedContactDetail, setSelectedContactDetail] = useState(null);
             const [selectedListToManage, setSelectedListToManage] = useState(null); 
-            const [isCreateListModalOpen, setIsCreateListModalOpen] = useState(false); // NOVO: Estado para abrir modal de criação
+            const [isCreateListModalOpen, setIsCreateListModalOpen] = useState(false); 
             
             // Estados para o fluxo de importação
             const [stagedContacts, setStagedContacts] = useState([]);
@@ -886,7 +890,7 @@
             // LÓGICA DE NEGÓCIO SIMULADA
             const getContactsByList = (listId) => { 
                 if (!listId || contactLists.length === 0 || contacts.length === 0) return [];
-                const list = contactLists.find(l => l.id === listId);
+                const list = contactLists.find(l => l.id == listId);
                 if (!list) return [];
                 return contacts.filter(c => list.contactIds.includes(c.id)); 
             };
@@ -980,10 +984,9 @@
                 });
 
                 if (validCount > 0 && targetListId) {
-                    // targetListId é uma string ou null. Precisamos ter certeza que é string para o doc.
                     const listIdStr = targetListId.toString(); 
                     const listRef = doc(db, `artifacts/${appId}/users/${userId}/contactLists`, listIdStr);
-                    const currentList = contactLists.find(l => l.id == targetListId); // Usando == para comparar number com string
+                    const currentList = contactLists.find(l => l.id == targetListId); 
                     
                     if (currentList) {
                         const updatedContactIds = [...new Set([...currentList.contactIds, ...newContactIds])];
@@ -1262,102 +1265,213 @@
                 );
             };
 
-            // 2. CONEXÃO WHATSAPP (Mantida a lógica, novo visual)
-            const Connection = () => { /* Código da Conexão Mantido */ return (
-                <div className="flex flex-col items-center justify-center h-full bg-white rounded-2xl shadow-xl p-10 animate-fade-in">
-                    <h2 className="text-3xl font-extrabold mb-8 text-gray-900">Gerenciar Conexão API</h2>
+            // 2. CONEXÃO WHATSAPP (Agora interage com a API Node.js real)
+            const Connection = () => { 
+                const [qrCodeImage, setQrCodeImage] = useState(null); // Armazena a imagem Base64 do QR Code
+                const [loadingState, setLoadingState] = useState(false); // Carregamento da API
+
+                // Função de Polling para verificar o status
+                const checkSessionStatus = () => {
+                    // Note: sessionStatus não é um estado local, precisamos pegar do servidor
                     
-                    {connectionStep === 0 && (
-                        <div className="text-center">
-                            <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6 text-gray-400">
-                                <Icon name="smartphone" size={48} />
-                            </div>
-                            <h3 className="text-xl font-bold mb-3">Conectar Número</h3>
-                            <p className="text-gray-500 mb-8 max-w-md">
-                                Conecte seu número para iniciar as automações.
-                            </p>
-                            <button 
-                                onClick={() => setConnectionStep(1)}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-full font-medium transition flex items-center mx-auto gap-2 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
-                            >
-                                <Icon name="qr-code" size={18} /> Gerar Novo QR Code
-                            </button>
-                        </div>
-                    )}
+                    fetch(`${API_BASE_URL}/api/session/status`)
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.status === 'CONNECTED') {
+                                setIsConnected(true);
+                                setConnectionStep(2);
+                                setQrCodeImage(null);
+                                setLoadingState(false);
+                            } else if (data.status === 'QR_READY') {
+                                setConnectionStep(1); // Mantém no passo de escaneamento
+                            } else if (data.status === 'DISCONNECTED') {
+                                setConnectionStep(0);
+                                setIsConnected(false);
+                                setQrCodeImage(null);
+                            }
+                        })
+                        .catch(err => {
+                            console.error("Erro ao fazer polling:", err);
+                            // Se o servidor cair, assumimos desconectado
+                            setIsConnected(false);
+                            setConnectionStep(0);
+                            setQrCodeImage(null);
+                            setLoadingState(false);
+                        });
+                };
 
-                    {connectionStep === 1 && (
-                        <div className="text-center animate-fade-in">
-                            <h3 className="font-bold text-xl mb-4 text-gray-800">Escaneie o código abaixo</h3>
-                            <p className="text-sm text-gray-600 mb-6">Abra o WhatsApp, vá em Configurações > Dispositivos Conectados.</p>
-                            <div className="bg-white p-6 border-4 border-emerald-500 rounded-xl inline-block mb-4 relative shadow-2xl">
-                                {/* Simulação de QR Code */}
-                                <div className="w-72 h-72 bg-gray-900 flex items-center justify-center text-white p-4">
-                                    <Icon name="scan" size={48} className="text-emerald-500"/>
-                                    <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-xs font-bold bg-gray-900 px-2 py-1 rounded">QR CODE SIMULADO</span>
-                                </div>
-                                <div className="absolute inset-0 flex items-center justify-center bg-white/80 animate-pulse" style={{animationDuration: '2s', opacity: 0.9}}>
-                                    <span className="text-sm font-bold text-gray-800">Aguardando leitura...</span>
-                                </div>
-                            </div>
-                            {/* Botão de Simulação Aprimorado */}
-                            <div className="mt-6 p-4 bg-gray-100 rounded-xl">
-                                <button 
-                                    onClick={() => {
-                                        setConnectionStep(2);
-                                        setIsConnected(true);
-                                    }}
-                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-bold transition shadow-md"
-                                >
-                                    Simular Leitura Concluída (Avançar)
-                                </button>
-                                <p className="text-xs text-gray-500 mt-2">Clique para simular o escaneamento do QR Code e conectar a API.</p>
-                            </div>
-                        </div>
-                    )}
+                // Inicia o Polling quando no passo 1 (QR READY)
+                useEffect(() => {
+                    let intervalId;
+                    // Polling a cada 3s enquanto está no passo de QR Code (1)
+                    if (connectionStep === 1) {
+                        intervalId = setInterval(checkSessionStatus, 3000); 
+                    } else if (connectionStep === 2) {
+                        setLoadingState(false);
+                    }
+                    return () => clearInterval(intervalId);
+                }, [connectionStep]);
 
-                    {connectionStep === 2 && (
-                        <div className="text-center animate-fade-in">
-                            <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 text-emerald-600">
-                                <Icon name="check-circle" size={48} />
-                            </div>
-                            <h3 className="text-2xl font-bold mb-3 text-emerald-800">Conectado e Operacional!</h3>
-                            <p className="text-gray-500 mb-8">
-                                <span className="font-bold">Número Conectado:</span> +55 (11) 99999-9999<br/>
-                                <span className="font-bold">Status da API:</span> <span className="text-green-500 font-bold">Online</span>
-                            </p>
-                            
-                            {/* NOVO: CONTROLES DE SAÚDE SIMULADOS */}
-                            <div className="mt-6 p-4 bg-yellow-50 rounded-xl border border-yellow-200">
-                                <p className="font-bold text-yellow-800 mb-2">Controle de Saúde do Número:</p>
-                                <div className="flex justify-center gap-4">
-                                    <button 
-                                        onClick={() => setIsBlocked(prev => !prev)}
-                                        className={`px-4 py-1 text-sm rounded-full font-medium transition ${isBlocked ? 'bg-red-500 text-white' : 'bg-red-200 text-red-700 hover:bg-red-300'}`}
-                                    >
-                                        {isBlocked ? '✅ Bloqueado' : 'Simular Bloqueio'}
-                                    </button>
-                                    <button 
-                                        onClick={() => setIsSuspended(prev => !prev)}
-                                        className={`px-4 py-1 text-sm rounded-full font-medium transition ${isSuspended ? 'bg-orange-500 text-white' : 'bg-orange-200 text-orange-700 hover:bg-orange-300'}`}
-                                    >
-                                        {isSuspended ? '✅ Suspenso' : 'Simular Suspensão'}
-                                    </button>
-                                </div>
-                            </div>
 
-                            <button 
-                                onClick={() => {
-                                    setConnectionStep(0);
+                // Função para iniciar a sessão e obter QR Code
+                const handleStartSession = () => {
+                    setLoadingState(true);
+                    setConnectionStep(1);
+                    setQrCodeImage(null);
+                    setIsConnected(false);
+
+                    fetch(`${API_BASE_URL}/api/session/start`)
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.status === 'QR_READY' && data.qrCode) {
+                                setQrCodeImage(data.qrCode);
+                                setLoadingState(false);
+                                setConnectionStep(1);
+                            } else if (data.status === 'CONNECTED') {
+                                setIsConnected(true);
+                                setConnectionStep(2);
+                                setLoadingState(false);
+                            } else if (data.status === 'DISCONNECTED') {
+                                // Servidor iniciou mas não gerou QR ainda (espera o polling)
+                                setLoadingState(true); 
+                            } else {
+                                showModal("Erro na API", "Resposta inválida. Verifique o console do servidor.");
+                                setLoadingState(false);
+                                setConnectionStep(0);
+                            }
+                        })
+                        .catch(err => {
+                            console.error("Erro na comunicação com a API:", err);
+                            showModal("Erro de Rede", `Falha ao conectar ao servidor API. Certifique-se de que '${API_BASE_URL}' está online.`);
+                            setLoadingState(false);
+                            setConnectionStep(0);
+                        });
+                };
+                
+                // Função para desconectar (usa endpoint real do servidor)
+                const handleDisconnect = () => {
+                    if (!isConnected) {
+                         showModal("Atenção", "O número já está offline.");
+                         return;
+                    }
+
+                    if (window.confirm("Você tem certeza que deseja desconectar a sessão atual do WhatsApp?")) {
+                         fetch(`${API_BASE_URL}/api/session/disconnect`, { method: 'POST' })
+                            .then(res => res.json())
+                            .then(data => {
+                                if (data.success) {
+                                    showModal("Sessão Encerrada", "Sessão do WhatsApp desconectada do servidor.");
                                     setIsConnected(false);
-                                }}
-                                className="text-red-500 text-sm hover:text-red-700 font-medium transition flex items-center mx-auto gap-1 mt-6"
-                            >
-                                <Icon name="power" size={16}/> Desconectar Dispositivo (Mantém Histórico)
-                            </button>
-                        </div>
-                    )}
-                </div>
-            ); };
+                                    setConnectionStep(0);
+                                    setQrCodeImage(null);
+                                    setIsBlocked(false); // Limpa status de saúde ao desconectar
+                                    setIsSuspended(false);
+                                } else {
+                                    showModal("Erro", data.message);
+                                }
+                            })
+                            .catch(err => {
+                                showModal("Erro de Rede", "Não foi possível comunicar o comando de desconexão à API.");
+                                setIsConnected(false);
+                                setConnectionStep(0);
+                            });
+                    }
+                };
+
+
+                return (
+                    <div className="flex flex-col items-center justify-center h-full bg-white rounded-2xl shadow-xl p-10 animate-fade-in">
+                        <h2 className="text-3xl font-extrabold mb-8 text-gray-900">Gerenciar Conexão API</h2>
+                        
+                        {connectionStep === 0 && (
+                            <div className="text-center">
+                                <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6 text-gray-400">
+                                    <Icon name="smartphone" size={48} />
+                                </div>
+                                <h3 className="text-xl font-bold mb-3">Conectar Número</h3>
+                                <p className="text-gray-500 mb-8 max-w-md">
+                                    Inicie a API no seu servidor ({API_BASE_URL}) e clique no botão para obter o QR Code.
+                                </p>
+                                <button 
+                                    onClick={handleStartSession}
+                                    disabled={loadingState}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-full font-medium transition flex items-center mx-auto gap-2 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+                                >
+                                    {loadingState ? (
+                                        <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></span>
+                                    ) : (
+                                        <Icon name="qr-code" size={18} />
+                                    )}
+                                     {loadingState ? 'Solicitando QR Code...' : 'Gerar Novo QR Code'}
+                                </button>
+                                <p className='text-xs text-gray-400 mt-2'>Status da API: DISCONNECTED</p>
+                            </div>
+                        )}
+
+                        {connectionStep === 1 && (
+                            <div className="text-center animate-fade-in">
+                                <h3 className="font-bold text-xl mb-4 text-gray-800">Escaneie o código abaixo</h3>
+                                <p className="text-sm text-gray-600 mb-6">Abra o WhatsApp, vá em Configurações > Dispositivos Conectados.</p>
+                                <div className="bg-white p-6 border-4 border-emerald-500 rounded-xl inline-block mb-4 relative shadow-2xl">
+                                    {qrCodeImage ? (
+                                        <img src={qrCodeImage} alt="QR Code" className="w-72 h-72 object-contain"/>
+                                    ) : (
+                                        <div className="w-72 h-72 bg-gray-200 flex items-center justify-center text-gray-700 font-bold">
+                                            {loadingState ? 'Gerando QR Code...' : 'AGUARDANDO SERVIDOR...'}
+                                        </div>
+                                    )}
+                                    {/* Exibe o overlay enquanto não houver imagem e estiver em estado de espera */}
+                                    {loadingState || !qrCodeImage ? (
+                                        <div className="absolute inset-0 flex items-center justify-center bg-white/80 animate-pulse" style={{animationDuration: '2s', opacity: 0.9}}>
+                                            <span className="text-sm font-bold text-gray-800">Aguardando leitura...</span>
+                                        </div>
+                                    ) : null}
+                                </div>
+                                <p className='text-sm text-gray-600 mt-4'>O sistema fará polling até a conexão ser estabelecida.</p>
+                            </div>
+                        )}
+
+                        {connectionStep === 2 && (
+                            <div className="text-center animate-fade-in">
+                                <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 text-emerald-600">
+                                    <Icon name="check-circle" size={48} />
+                                </div>
+                                <h3 className="text-2xl font-bold mb-3 text-emerald-800">Conectado e Operacional!</h3>
+                                <p className="text-gray-500 mb-8">
+                                    <span className="font-bold">Número Conectado:</span> +55 (11) 99999-9999<br/>
+                                    <span className="font-bold">Status da API:</span> <span className="text-green-500 font-bold">Online</span>
+                                </p>
+                                
+                                {/* CONTROLES DE SAÚDE SIMULADOS */}
+                                <div className="mt-6 p-4 bg-yellow-50 rounded-xl border border-yellow-200">
+                                    <p className="font-bold text-yellow-800 mb-2">Controle de Saúde do Número:</p>
+                                    <div className="flex justify-center gap-4">
+                                        <button 
+                                            onClick={() => setIsBlocked(prev => !prev)}
+                                            className={`px-4 py-1 text-sm rounded-full font-medium transition ${isBlocked ? 'bg-red-500 text-white' : 'bg-red-200 text-red-700 hover:bg-red-300'}`}
+                                        >
+                                            {isBlocked ? '✅ Bloqueado' : 'Simular Bloqueio'}
+                                        </button>
+                                        <button 
+                                            onClick={() => setIsSuspended(prev => !prev)}
+                                            className={`px-4 py-1 text-sm rounded-full font-medium transition ${isSuspended ? 'bg-orange-500 text-white' : 'bg-orange-200 text-orange-700 hover:bg-orange-300'}`}
+                                        >
+                                            {isSuspended ? '✅ Suspenso' : 'Simular Suspensão'}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <button 
+                                    onClick={handleDisconnect}
+                                    className="text-red-500 text-sm hover:text-red-700 font-medium transition flex items-center mx-auto gap-1 mt-6"
+                                >
+                                    <Icon name="power" size={16}/> Desconectar Dispositivo (Envia comando à API)
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
 
             // 3. CAMPANHA E DISPARO (REWORKED - FLUXO DE 3 ETAPAS)
             const Campaign = () => { /* Código da Campanha Mantido */ 
